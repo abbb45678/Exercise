@@ -35,7 +35,8 @@ class Block:
 
 
 def create_first_block():
-    block = Block(data="First Block", pre_hash="")
+    data=input("请输入创世块的数据信息：")
+    block = Block(data=data, pre_hash="")
     pow = Proofofwork(block)
     nonce, digest = pow.mine()
     block.nonce = nonce
