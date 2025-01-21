@@ -2,13 +2,14 @@ import hashlib
 import time
 import json
 
+
 class Block:
     def __init__(self):
         self.chain = []
         self.current_transaction = []
 
         # 创建创世区块
-        self.new_block(proof=100, pre_hash='1')
+        self.new_block(proof=100, pre_hash='0')
 
     def new_block(self, proof, pre_hash):
         # 创建新区块
