@@ -22,7 +22,11 @@ class Block:
         self.index = index
         self.pre_hash = pre_hash
         self.timestamp = timestamp
-        self.transactions = transactions
+        self.transactions = [
+            tx if isinstance(tx, Transaction)
+            else Transaction(tx["sender"], tx["receiver"], tx["amount"])
+            for tx in transactions
+        ]
         self.nonce = nonce
         self.hash = self.calculate_hash()
 
@@ -68,9 +72,25 @@ class Blockchain:
 
     def load_chain(self):
         if os.path.exists("transaction.json"):
-            with open("transaction.json", "w") as f:
-                chain_date = json.load(f)
-                self.chain = [Block(**date) for date in chain_date]
+            with open("transaction.json", "r") as f:
+                chain_data = json.load(f)
+                self.chain = []
+                for block_data in chain_data:
+                    # 将字典转为 Transaction 对象
+                    transactions = [
+                        Transaction(tx["sender"], tx["receiver"], tx["amount"])
+                        for tx in block_data["transactions"]
+                    ]
+
+                    block = Block(
+                        index=block_data["index"],
+                        pre_hash=block_data["pre_hash"],
+                        timestamp=block_data["timestamp"],
+                        transactions=transactions,
+                        nonce=block_data["nonce"]
+                    )
+                    block.hash = block_data["hash"]  # 直接赋哈希值避免重复计算
+                    self.chain.append(block)
 
     def get_last_block(self):
         return self.chain[-1]
@@ -87,7 +107,12 @@ class Blockchain:
 
     def valid_transaction(self, transaction):
         sender_balance = self.get_balance(transaction.sender)
-        return sender_balance >= transaction.amount
+        pending_spent = sum(
+            tx.amount for tx in self.current_transactions
+            if tx.sender == transaction.sender
+        )
+        available_balance = sender_balance - pending_spent
+        return available_balance >= transaction.amount
 
     def create_transactions(self, transaction):
         if self.valid_transaction(transaction):
@@ -97,15 +122,15 @@ class Blockchain:
             print("交易无效！")
 
     def mine_current_transactions(self, address_reward):
+        self.current_transactions.insert(0, Transaction(None, address_reward, self.mining_reward))
+
         new_block = Block(len(self.chain), self.get_last_block().hash, time.time(), self.current_transactions)
         new_block.mine_block(self.difficulty)
 
         self.chain.append(new_block)
         self.save_chain()
 
-        self.current_transactions = [
-            Transaction(None, address_reward, self.mining_reward)
-        ]
+        self.current_transactions = []
 
     def is_valid_block(self):
         for i in range(1, len(self.chain)):
@@ -125,12 +150,19 @@ class Blockchain:
 
 
 if __name__ == "__main__":
-    blockchain=Blockchain()
+    blockchain = Blockchain()
 
-    blockchain.create_transactions(Transaction("杜牧","李清照",70))
+    blockchain.create_transactions(Transaction("ww", "yy", 70))
     print("开始挖矿...")
     blockchain.mine_current_transactions("矿工3")
     print("挖矿后的区块链的状态：")
     print(blockchain)
 
-    print("区块链是否有效？",blockchain.is_valid_block())
+    blockchain.create_transactions(Transaction("hh", "yy", 80))
+    blockchain.create_transactions(Transaction("hh","ww",30))
+    print("第二次挖矿...")
+    blockchain.mine_current_transactions("矿工1")
+    print("挖矿后区块链的状态：")
+    print(blockchain)
+
+    print("区块链是否有效？", blockchain.is_valid_block())
