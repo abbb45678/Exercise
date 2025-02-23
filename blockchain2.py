@@ -9,12 +9,13 @@ class Transaction:
         self.sender = sender
         self.receiver = receiver
         self.amount = amount
+        self.tx_id = hashlib.sha256(f"{sender}{receiver}{amount}{time.time()}".encode()).hexdigest()
 
     def to_dict(self):
-        return {"sender": self.sender, "receiver": self.receiver, "amount": self.amount}
+        return {"tx_id": self.tx_id, "sender": self.sender, "receiver": self.receiver, "amount": self.amount}
 
     def __repr__(self):
-        return f"Transaction(sender={self.sender},receiver={self.receiver},amount={self.amount})"
+        return f"Transaction(sender={self.sender},receiver={self.receiver},amount={self.amount},tx_id={self.tx_id})"
 
 
 class Block:
@@ -24,7 +25,12 @@ class Block:
         self.timestamp = timestamp
         self.transactions = [
             tx if isinstance(tx, Transaction)
-            else Transaction(tx["sender"], tx["receiver"], tx["amount"])
+            else Transaction(
+                tx["sender"],
+                tx["receiver"],
+                tx["amount"],
+                tx_id=tx["tx_id"]
+            )
             for tx in transactions
         ]
         self.nonce = nonce
@@ -54,7 +60,8 @@ class Block:
 
 
 def create_genesis_block():
-    return Block(0, "0", time.time(), [])
+    genesis_tx = Transaction(None, "system_wallet", 10000)
+    return Block(0, "0", time.time(), [genesis_tx])
 
 
 class Blockchain:
@@ -96,25 +103,33 @@ class Blockchain:
         return self.chain[-1]
 
     def get_balance(self, address):
-        balance = 1000
+        balance = 0
+        # 计算区块链中已确认的交易
         for block in self.chain:
             for tx in block.transactions:
                 if tx.sender == address:
                     balance -= tx.amount
                 if tx.receiver == address:
                     balance += tx.amount
+        # 计算当前交易池中的未确认交易
+        for tx in self.current_transactions:
+            if tx.sender == address:
+                balance -= tx.amount
+            if tx.receiver == address:
+                balance += tx.amount
         return balance
 
     def valid_transaction(self, transaction):
-        sender_balance = self.get_balance(transaction.sender)
-        pending_spent = sum(
-            tx.amount for tx in self.current_transactions
-            if tx.sender == transaction.sender
-        )
-        available_balance = sender_balance - pending_spent
-        return available_balance >= transaction.amount
+        if transaction.sender is None:
+            return True  # 系统交易直接通过
+        sender_balance = self.get_balance(transaction.sender)  # 包括当前交易池中的交易
+        return sender_balance >= transaction.amount
 
     def create_transactions(self, transaction):
+        existing_ids = {tx.tx_id for tx in self.current_transactions}
+        if transaction.tx_id in existing_ids:
+            print("交易已存在！")
+            return
         if self.valid_transaction(transaction):
             self.current_transactions.append(transaction)
             self.save_chain()
@@ -122,7 +137,8 @@ class Blockchain:
             print("交易无效！")
 
     def mine_current_transactions(self, address_reward):
-        self.current_transactions.insert(0, Transaction(None, address_reward, self.mining_reward))
+        reward_tx = Transaction(None, address_reward, self.mining_reward)
+        self.current_transactions.insert(0, reward_tx)
 
         new_block = Block(len(self.chain), self.get_last_block().hash, time.time(), self.current_transactions)
         new_block.mine_block(self.difficulty)
@@ -152,17 +168,25 @@ class Blockchain:
 if __name__ == "__main__":
     blockchain = Blockchain()
 
-    blockchain.create_transactions(Transaction("ww", "yy", 70))
-    print("开始挖矿...")
-    blockchain.mine_current_transactions("矿工3")
-    print("挖矿后的区块链的状态：")
-    print(blockchain)
+    # 验证创世区块中 system_wallet 余额
+    print("system_wallet 初始余额:", blockchain.get_balance("system_wallet"))
 
-    blockchain.create_transactions(Transaction("hh", "yy", 80))
-    blockchain.create_transactions(Transaction("hh","ww",30))
-    print("第二次挖矿...")
+    # 创建有效交易：系统向user1 转账 500
+    tx1 = Transaction("system_wallet", "user1", 500)
+    blockchain.create_transactions(tx1)
+
+    # 创建有效交易：user1向ww 转账 200
+    tx2 = Transaction("user1", "ww", 200)
+    blockchain.create_transactions(tx2)
+
+    # 挖矿确认交易
+    print("开始挖矿...")
     blockchain.mine_current_transactions("矿工1")
     print("挖矿后区块链的状态：")
     print(blockchain)
 
-    print("区块链是否有效？", blockchain.is_valid_block())
+    # 打印余额
+    print("system_wallet 余额:", blockchain.get_balance("system_wallet"))
+    print("user1 余额:", blockchain.get_balance("user1"))
+    print("ww 余额:", blockchain.get_balance("ww"))
+    print("矿工1 余额:", blockchain.get_balance("矿工1"))
